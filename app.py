@@ -665,7 +665,7 @@ with tab_runs:
                                        help=f"Continue from the next step: {STAGE_INFO[nxt][0] if nxt else 'report'}"):
                         _select_run(rid)
                         start_job(None, rid, st.session_state.get("f_provider"), st.session_state.get("f_model"),
-                                  st.session_state.get("f_base_url") or None, st.session_state.get("f_concurrency"))
+                                  st.session_state.get("f_base_url") or None)
                         st.rerun()
                 b_open.button("Opened" if is_open else "Open", key=f"open_{rid}", width="stretch", disabled=is_open,
                               on_click=_select_run, args=(rid,), help="Show this run in the Results tab")
