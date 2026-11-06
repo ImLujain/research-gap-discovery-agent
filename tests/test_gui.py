@@ -58,7 +58,7 @@ def test_sidebar_saves_keys_to_env_file(tmp_path, monkeypatch):
     save.click().run()
     assert not at.exception
     assert "S2_API_KEY=s2-secret" in (tmp_path / ".env").read_text()
-    assert any("✅ Semantic Scholar key" in m.value for m in at.sidebar.markdown)
+    assert any("Semantic Scholar key" in m.value and ">set<" in m.value for m in at.sidebar.markdown)
 
 
 def test_provider_selector_and_key_form(tmp_path, monkeypatch):

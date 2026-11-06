@@ -61,13 +61,13 @@ STAGE_INFO: dict[str, tuple[str, str]] = {
     "report": ("Writing the report", "Rendering the final report and exports"),
 }
 
-STATUS_INFO: dict[str, tuple[str, str, str]] = {  # value -> (label, explanation, colour)
-    "limited_evidence_found": ("Open gap", "Counter-searches found little or no work that fills this gap", "#16A34A"),
-    "preliminary_evidence": ("Early work only", "Only preliminary studies exist so far", "#16A34A"),
-    "conflicting_evidence": ("Conflicting findings", "Existing studies disagree with each other", "#D97706"),
-    "partially_addressed": ("Partly addressed", "Some aspects are already covered; the gap was narrowed", "#D97706"),
-    "cannot_validate": ("Could not verify", "The validation searches failed, so this is unconfirmed", "#6B7280"),
-    "addressed": ("Already addressed", "Existing work already covers this", "#DC2626"),
+STATUS_INFO: dict[str, tuple[str, str, str]] = {  # value -> (label, explanation, css class)
+    "limited_evidence_found": ("Open gap", "Counter-searches found little or no work that fills this gap", "rga-ok"),
+    "preliminary_evidence": ("Early work only", "Only preliminary studies exist so far", "rga-ok"),
+    "conflicting_evidence": ("Conflicting findings", "Existing studies disagree with each other", "rga-warn"),
+    "partially_addressed": ("Partly addressed", "Some aspects are already covered; the gap was narrowed", "rga-warn"),
+    "cannot_validate": ("Could not verify", "The validation searches failed, so this is unconfirmed", "rga-grey"),
+    "addressed": ("Already addressed", "Existing work already covers this", "rga-bad"),
 }
 CATEGORY_LABELS = {
     "knowledge": "Knowledge gap", "methodological": "Method gap", "empirical": "Missing experiments",
@@ -132,19 +132,16 @@ FORM_KEYS = ["f_topic", "f_discipline", "f_from", "f_to", "f_method", "f_priorit
 
 st.markdown("""
 <style>
-  .block-container { padding-top: 2rem; max-width: 1180px; }
-  h1 { font-weight: 700; letter-spacing: -0.01em; }
-  .rga-hero { opacity: 0.75; font-size: 1.05rem; margin-top: -0.4rem; margin-bottom: 1.2rem; }
-  .rga-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
-               color: white; margin-right: 6px; vertical-align: middle; }
-  .rga-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.76rem;
-              background: rgba(37, 99, 235, 0.14); color: inherit; margin-right: 6px; vertical-align: middle; }
+  .block-container { padding-top: 3rem; max-width: 1120px; }
+  [data-testid="stMainBlockContainer"] h1 { font-size: 1.6rem !important; font-weight: 600 !important; padding-bottom: 0.2rem; }
+  [data-testid="stMainBlockContainer"] h2 { font-size: 1.25rem !important; font-weight: 600 !important; }
+  [data-testid="stMainBlockContainer"] h3 { font-size: 1.05rem !important; font-weight: 600 !important; }
+  .rga-hero { opacity: 0.75; margin-top: 0; margin-bottom: 1rem; }
   .rga-muted { opacity: 0.65; font-size: 0.86rem; }
-  .rga-rank { font-size: 1.6rem; font-weight: 700; color: #3B82F6; line-height: 1; }
-  div[data-testid="stMetric"] { background: rgba(127, 127, 127, 0.10); border-radius: 10px; padding: 0.8rem 1rem; }
+  .rga-status { font-weight: 600; }
+  .rga-ok { color: #2E7D32; } .rga-warn { color: #B26A00; } .rga-bad { color: #B3261E; } .rga-grey { opacity: 0.6; }
+  div[data-testid="stMetric"] { border-left: 2px solid rgba(127,127,127,0.35); padding-left: 0.8rem; }
   [data-testid="stSidebar"] .stMarkdown p { margin-bottom: 0.3rem; }
-  [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] { padding: 0.35rem 0.6rem 0.2rem 0.6rem; }
-  [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] p { margin-bottom: 0.15rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -190,13 +187,9 @@ def provider_ready(name: str) -> tuple[bool, str]:
     return True, "ready"
 
 
-def badge(text: str, colour: str) -> str:
-    return f'<span class="rga-badge" style="background:{colour}">{text}</span>'
-
-
-def status_badge(value: str) -> str:
-    label, _, colour = STATUS_INFO.get(value, (value.replace("_", " "), "", "#6B7280"))
-    return badge(label, colour)
+def status_text(value: str) -> str:
+    label, expl, css = STATUS_INFO.get(value, (value.replace("_", " "), "", "rga-grey"))
+    return f'<span class="rga-status {css}" title="{expl}">{label}</span>'
 
 
 def fmt_duration(seconds: float) -> str:
@@ -365,13 +358,13 @@ def run_status(rid: str, s: RunState) -> str:
     running = {j["run_id"] for j in st.session_state.get("jobs", []) if j["status"] == "running"}
     n = len(s.stages_completed)
     if rid in running:
-        return "🟢 Running"
+        return "Running"
     if n == len(STAGES):
         gaps = len([v for v in s.validated_gaps if not v.rejected])
-        return f"✅ Complete · {gaps} gap{'s' if gaps != 1 else ''}"
+        return f"Complete · {gaps} gap{'s' if gaps != 1 else ''}"
     if n == 0:
-        return "⚪ Not started"
-    return f"⏸ {n} of {len(STAGES)} steps"
+        return "Not started"
+    return f"{n} of {len(STAGES)} steps"
 
 
 def credential_form(form_key: str, fields: list[tuple[str, str, bool, str]], button: str, extra: dict | None = None) -> None:
@@ -398,13 +391,13 @@ if st.session_state.get("prefill_run"):
     _sp = settings().runs_dir / _rid / "state.json"
     if _sp.exists():
         prefill_form_from(RunState.model_validate(json.loads(_sp.read_text())))
-        st.toast("Settings copied into the New investigation form.", icon="✅")
+        st.toast("Settings copied into the New investigation form.")
 
 # ----------------------------------------------------------------------------- sidebar: setup
 with st.sidebar:
-    st.title("🔬 Research Gap Agent")
+    st.title("Research Gap Agent")
     st.caption("Finds research gaps in the literature and checks its own findings before showing them to you.")
-    with st.popover("🌗 Appearance", help="Switch between light and dark mode. 'System' follows your device setting."):
+    with st.popover("Appearance", help="Switch between light and dark mode. 'System' follows your device setting."):
         t1, t2, t3 = st.columns(3)
         if t1.button("Light", key="theme_light", width="stretch"):
             apply_theme("Light")
@@ -416,10 +409,8 @@ with st.sidebar:
     st.subheader("Setup")
     detected = detect_provider()
     ready, why = provider_ready(detected)
-    if ready:
-        st.success(f"AI model: {provider_label(detected)}", icon="✅")
-    else:
-        st.warning(f"AI model: {provider_label(detected)} has {why}", icon="⚠️")
+    st.markdown(f"**AI model** · {provider_label(detected)} · "
+                f"<span class='{'rga-ok' if ready else 'rga-warn'}'>{'ready' if ready else why}</span>", unsafe_allow_html=True)
     with st.expander("AI model settings", expanded=not ready):
         chosen_provider = st.selectbox("Provider", list(PROVIDERS), index=list(PROVIDERS).index(detected), key="sb_provider",
                                        format_func=provider_label,
@@ -437,13 +428,14 @@ with st.sidebar:
             (st.success if ok_conn else st.error)(msg)
 
     n_keys = sum(1 for env, *_ in SOURCE_FIELDS if os.environ.get(env))
-    st.info(f"Databases: {n_keys} of {len(SOURCE_FIELDS)} optional keys set", icon="📚")
+    st.markdown(f"**Databases** · {n_keys} of {len(SOURCE_FIELDS)} optional keys set")
     with st.expander("Database keys"):
         st.caption("All databases work without keys. Your email and an OpenAlex key make searches faster and more reliable.")
         for env, label, _, _ in SOURCE_FIELDS:
             val = os.environ.get(env)
-            st.markdown(f"<span title='Stored as {env}'>{'✅' if val else '▫️'} {label}"
-                        f"{'' if val else ' <span class=rga-muted>(not set)</span>'}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span title='Stored as {env}'>{label} · "
+                        f"<span class='{'rga-ok' if val else 'rga-grey'}'>{'set' if val else 'not set'}</span></span>",
+                        unsafe_allow_html=True)
         credential_form("source_cred_form", SOURCE_FIELDS, "Save source keys")
         if not os.environ.get("OPENALEX_API_KEY"):
             mail = os.environ.get("RGA_MAILTO", "")
@@ -459,9 +451,9 @@ with st.sidebar:
         st.subheader("Running now")
         for j in st.session_state["jobs"]:
             drain(j)
-            icon = {"running": "🟢", "done": "✅", "stopped": "⏹"}.get(j["status"], "⚠️")
             stage = STAGE_INFO.get(j["stage"], (j["stage"], ""))[0]
-            st.markdown(f"{icon} **{j['label']}**  \n<span class='rga-muted'>{stage}</span>", unsafe_allow_html=True)
+            st.markdown(f"**{j['label']}**  \n<span class='rga-muted'>{j['status'].replace('_', ' ')} · {stage}</span>",
+                        unsafe_allow_html=True)
 
 selected_run = st.session_state.get("selected_run")
 tab_new, tab_runs, tab_view = st.tabs(["New investigation", "Previous investigations", "Results"])
@@ -474,12 +466,12 @@ with tab_new:
                  "f_goal": "research", "f_existing": ""}.items():
         st.session_state.setdefault(k, v)
 
-    st.title("What do you want to investigate?")
-    st.markdown('<p class="rga-hero">Describe a topic. The agent reads the literature, proposes research gaps, '
-                'tries to disprove each one, and writes an evidence-backed report.</p>', unsafe_allow_html=True)
+    st.title("New investigation")
+    st.markdown('<p class="rga-hero">Enter a topic. The agent searches the literature, proposes research gaps, '
+                'tests each one against further searches, and writes a report with verified citations.</p>', unsafe_allow_html=True)
     if not ready:
-        st.warning(f"**One thing before your first run:** {provider_label(chosen_provider)} has {why}. "
-                   "Open **AI model settings** in the sidebar, paste your key and click **Save provider keys**.", icon="🔑")
+        st.warning(f"{provider_label(chosen_provider)} has {why}. "
+                   "Open **AI model settings** in the sidebar, paste your key and click **Save provider keys**.")
 
     with st.form("run_form"):
         topic = st.text_input("Research topic", key="f_topic",
@@ -567,8 +559,8 @@ with tab_new:
         st.session_state["job"] = job
 
     if not jobs:
-        with st.expander("How does it work, and what will I get?"):
-            st.markdown("**The agent works in twelve steps, and you can watch each one:**")
+        with st.expander("About this tool"):
+            st.markdown("**The twelve steps of a run**")
             for i, (sid, (name, desc)) in enumerate(STAGE_INFO.items(), 1):
                 st.markdown(f"{i}. **{name}.** {desc}.")
             st.markdown("""
@@ -591,7 +583,7 @@ flags retracted papers, and tries to disprove each gap before reporting it. If a
         else:
             st.subheader(job["label"])
         if job["status"] == "running" and not job["stop"].is_set():
-            if st.button("⏹ Stop after the current step", help="Finishes the model call in flight, saves progress, and stops. "
+            if st.button("Stop after the current step", help="Finishes the model call in flight, saves progress, and stops. "
                                                              "You can resume later from the Results tab."):
                 job["stop"].set()
                 job["log"].append(f"{time.strftime('%H:%M:%S')} stop requested; finishing the current step…")
@@ -619,11 +611,11 @@ flags retracted papers, and tries to disprove each gap before reporting it. If a
             time.sleep(1.0)
         if job["status"] == "done":
             bar.progress(1.0, text="Finished")
-            head.success(f"Report ready after {fmt_duration(time.time() - job['started'])}. Open the **Results** tab to read it.", icon="🎉")
+            head.success(f"Report ready after {fmt_duration(time.time() - job['started'])}. Open the **Results** tab to read it.")
             selected_run = job["run_id"]
         elif job["status"] == "stopped":
             bar.empty()
-            head.warning("Stopped at a checkpoint. Open the run in the **Results** tab and click **Resume** to continue later.", icon="⏹")
+            head.warning("Stopped at a checkpoint. Open the run in the **Results** tab and click **Resume** to continue later.")
         elif job["status"] == "config_error":
             bar.empty()
             head.error("**The model rejected the call because of account configuration.**\n\n" + job["config_error"]
@@ -641,11 +633,11 @@ with tab_runs:
     runs = list_runs(settings().runs_dir)
     st.title("Previous investigations")
     if not runs:
-        st.info("Nothing here yet. Every investigation you start is saved automatically and will show up on this page.", icon="💡")
+        st.info("No saved investigations yet. Every run is saved automatically and listed here.")
     else:
         complete_n = sum(1 for _, s in runs if len(s.stages_completed) == len(STAGES))
-        st.markdown(f'<p class="rga-hero">{len(runs)} saved · {complete_n} complete · {len(runs) - complete_n} incomplete. '
-                    'Open one to read its results, run it again with changes, or delete it.</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="rga-hero">{len(runs)} saved · {complete_n} complete · {len(runs) - complete_n} incomplete</p>',
+                    unsafe_allow_html=True)
         f1, f2 = st.columns([3, 1])
         query = f1.text_input("Search", key="run_filter", placeholder="Search by topic…", label_visibility="collapsed")
         show = f2.selectbox("Show", ["All", "Complete", "Incomplete"], key="run_show", label_visibility="collapsed")
@@ -661,23 +653,23 @@ with tab_runs:
             is_open = selected_run == rid
             o = s.options
             with st.container(border=True):
-                info, b_open, b_again, b_del = st.columns([6, 1.2, 1.6, 0.7])
+                info, b_open, b_again, b_del = st.columns([6, 1.1, 1.3, 1.1])
                 info.markdown(f"**{o.topic}**  \n<span class='rga-muted'>{s.created_at.strftime('%d %b %Y, %H:%M')} · "
                               f"{run_status(rid, s)} · {len(s.papers)} papers · {provider_label(o.provider)}</span>",
                               unsafe_allow_html=True)
-                b_open.button("Opened ✓" if is_open else "Open", key=f"open_{rid}", width="stretch", disabled=is_open,
+                b_open.button("Opened" if is_open else "Open", key=f"open_{rid}", width="stretch", disabled=is_open,
                               on_click=_select_run, args=(rid,), help="Show this run in the Results tab")
-                b_again.button("↺ Run again", key=f"again_{rid}", width="stretch", on_click=_reuse_settings, args=(rid,),
+                b_again.button("Run again", key=f"again_{rid}", width="stretch", on_click=_reuse_settings, args=(rid,),
                                help="Copy this run's topic and settings into the New investigation form")
                 if st.session_state.get("confirm_delete") == rid:
-                    st.warning("Delete this run and all its files? This cannot be undone.", icon="🗑")
+                    st.warning("Delete this run and all its files? This cannot be undone.")
                     d1, d2, _ = st.columns([1, 1, 6])
                     if d1.button("Delete", key=f"confirm_{rid}", type="primary", width="stretch"):
                         delete_run(rid)
                         st.rerun()
                     d2.button("Keep", key=f"keep_{rid}", width="stretch", on_click=_ask_delete, args=(None,))
                 else:
-                    b_del.button("🗑", key=f"del_{rid}", width="stretch", on_click=_ask_delete, args=(rid,), help="Delete this run")
+                    b_del.button("Delete", key=f"del_{rid}", width="stretch", on_click=_ask_delete, args=(rid,))
         if limit < len(shown):
             st.button(f"Show all {len(shown)} runs", key="show_all_runs_btn",
                       on_click=lambda: st.session_state.update(show_all_runs=True))
@@ -687,7 +679,7 @@ with tab_view:
     run_id = selected_run or (st.session_state.get("job") or {}).get("run_id")
     if not run_id:
         st.title("Results")
-        st.info("Nothing to show yet. Start an investigation in the first tab, or open one from **Previous investigations**.", icon="💡")
+        st.info("Nothing to show yet. Start an investigation, or open one from **Previous investigations**.")
     else:
         run_dir = settings().runs_dir / run_id
         sp = run_dir / "state.json"
@@ -707,9 +699,9 @@ with tab_view:
             if not complete:
                 next_stage = next((s for s in STAGES if s not in done), None)
                 st.warning(f"This run is incomplete: {len(done)} of {len(STAGES)} steps finished. "
-                           + (f"Next step: **{STAGE_INFO[next_stage][0]}**." if next_stage else ""), icon="⏸")
+                           + (f"Next step: **{STAGE_INFO[next_stage][0]}**." if next_stage else ""))
                 st.progress(len(done) / len(STAGES))
-                if st.button("▶ Resume this run", type="primary"):
+                if st.button("Resume this run", type="primary"):
                     start_job(None, run_id, st.session_state.get("f_provider"), st.session_state.get("f_model"),
                               st.session_state.get("f_base_url") or None)
                     st.rerun()
@@ -726,16 +718,16 @@ with tab_view:
             if report.exists():
                 d1, d2, d3 = st.columns([1, 1, 2])
                 if html_path.exists():
-                    d1.download_button("⬇ Download report", data=html_path.read_bytes(), file_name=f"{run_id}_report.html",
+                    d1.download_button("Download report", data=html_path.read_bytes(), file_name=f"{run_id}_report.html",
                                        type="primary", width="stretch", help="Self-contained web page; opens in any browser.")
-                d2.download_button("⬇ Report as Markdown", data=report.read_bytes(), file_name=f"{run_id}_report.md",
+                d2.download_button("Report as Markdown", data=report.read_bytes(), file_name=f"{run_id}_report.md",
                                    width="stretch")
                 with d3.popover("More files", width="stretch"):
                     st.caption("Reference files import directly into Zotero, Mendeley and EndNote.")
                     for name in EXPORT_FILES:
                         path = run_dir / name
                         if path.exists() and name not in ("report.html", "report.md"):
-                            st.download_button(f"⬇ {EXPORT_LABELS[name]}", data=path.read_bytes(), file_name=f"{run_id}_{name}",
+                            st.download_button(EXPORT_LABELS[name], data=path.read_bytes(), file_name=f"{run_id}_{name}",
                                                width="stretch")
 
             if state.validated_gaps:
@@ -751,7 +743,7 @@ with tab_view:
                     rec = state.recommendation
                     if rec:
                         with st.container(border=True):
-                            st.markdown(f"{badge('Recommended next step', '#2563EB')} **{rec.proposed_title}**", unsafe_allow_html=True)
+                            st.markdown(f"**Recommended direction**  \n{rec.proposed_title}")
                             st.markdown(rec.problem_statement)
                             with st.expander("Why this one, and how to approach it"):
                                 st.markdown(f"**Motivation.** {rec.motivation}\n\n**Aim.** {rec.aim}\n\n**Method.** {rec.methodology}")
@@ -759,23 +751,19 @@ with tab_view:
                                     st.markdown("**Research questions**\n" + "\n".join(f"- {q}" for q in rec.research_questions))
                                 if rec.expected_contributions:
                                     st.markdown("**Expected contributions**\n" + "\n".join(f"- {c}" for c in rec.expected_contributions))
-                    st.markdown(f"#### {len(ordered)} research gap{'s' if len(ordered) != 1 else ''} survived validation")
-                    st.caption("Ranked by evidence strength, novelty, feasibility and impact. Hover over a status for what it means.")
+                    st.markdown(f"### Validated gaps ({len(ordered)})")
+                    st.caption("Ranked by evidence strength, novelty, feasibility and impact. Hover over a status for its meaning.")
                     for v in ordered:
                         r = rank_of.get(v.gap.id)
                         with st.container(border=True):
-                            left, right = st.columns([1, 14])
-                            left.markdown(f"<div class='rga-rank'>#{r.rank if r else '–'}</div>", unsafe_allow_html=True)
-                            _, expl, _ = STATUS_INFO.get(v.status.value, ("", "", ""))
-                            right.markdown(
-                                f"**{v.gap.title}**  \n"
-                                f"<span title='{expl}'>{status_badge(v.status.value)}</span>"
-                                f"<span class='rga-pill'>{CATEGORY_LABELS.get(v.gap.category.value, v.gap.category.value)}</span>"
-                                f"<span class='rga-pill'>confidence: {v.confidence}</span>"
-                                f"<span class='rga-pill'>feasibility: {v.feasibility.overall}</span>",
+                            st.markdown(
+                                f"**{r.rank if r else '–'}. {v.gap.title}**  \n"
+                                f"<span class='rga-muted'>{status_text(v.status.value)} · "
+                                f"{CATEGORY_LABELS.get(v.gap.category.value, v.gap.category.value)} · "
+                                f"confidence {v.confidence} · feasibility {v.feasibility.overall}</span>",
                                 unsafe_allow_html=True)
-                            right.markdown(f"**What is missing.** {v.gap.what_is_missing}")
-                            with right.expander("Details and evidence"):
+                            st.markdown(f"**What is missing.** {v.gap.what_is_missing}")
+                            with st.expander("Details and evidence"):
                                 st.markdown(f"**What is already established.** {v.gap.what_is_established}")
                                 st.markdown(f"**Why it matters.** {v.gap.why_it_matters}")
                                 st.markdown(f"**Possible contribution.** {v.gap.potential_contribution}")
@@ -795,7 +783,7 @@ with tab_view:
                     if rejected:
                         with st.expander(f"{len(rejected)} candidate gap{'s' if len(rejected) != 1 else ''} rejected because existing work already covers them"):
                             for v in rejected:
-                                st.markdown(f"{status_badge(v.status.value)} **{v.gap.title}**  \n{v.rejection_reason or ''}",
+                                st.markdown(f"**{v.gap.title}** · {status_text(v.status.value)}  \n{v.rejection_reason or ''}",
                                             unsafe_allow_html=True)
                                 if v.counter_evidence:
                                     st.markdown("\n".join(
