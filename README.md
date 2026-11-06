@@ -33,13 +33,17 @@ research-gap-agent "prompt injection attacks on tool-using LLM agents" --from-ye
 
 Progress prints to the terminal. When it finishes, open `runs/<run_id>/report.html`.
 
-### Prefer a GUI?
+### Prefer a point-and-click app?
 
 ```bash
 streamlit run app.py
 ```
 
-Type the topic, watch each stage complete, then read the report and download the exports from the same page.
+![The dashboard](docs/images/dashboard.png)
+
+The app opens in your browser. Paste your API key once in the sidebar, type a topic, pick a depth
+(Quick, Standard or Thorough), and click Start. You can watch each of the twelve steps run, stop and
+resume a run, and read the ranked gaps, the full report and every paper found without touching a terminal.
 
 ## How it works
 

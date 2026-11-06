@@ -26,7 +26,7 @@ def test_app_renders_and_validates_empty_topic(tmp_path, monkeypatch):
     at = AppTest.from_file(str(APP), default_timeout=30).run()
     assert not at.exception
     assert any("Research Gap Agent" in t.value for t in at.sidebar.title)
-    at.button[0].click().run()  # submit with empty topic
+    next(b for b in at.button if "Start investigation" in b.label).click().run()  # submit with empty topic
     assert any("research topic" in e.value.lower() for e in at.error)
 
 
@@ -41,12 +41,12 @@ def test_app_lists_past_runs_and_shows_report(tmp_path, monkeypatch):
     at = AppTest.from_file(str(APP), default_timeout=30).run()
     assert not at.exception
     sb = next(s for s in at.sidebar.selectbox if s.label == "Open a run")
-    label = next(o for o in sb.options if o.startswith("old1"))
-    assert "1/12 stages" in label
+    label = next(o for o in sb.options if o.endswith("old1"))
+    assert "1/12 stages" in label and label.startswith("Old topic about agents")
     sb.select("old1").run()  # select by raw value; options are shown with formatted labels
     assert not at.exception
     assert any("incomplete" in w.value for w in at.warning)
-    assert any("Old topic about agents" in m.value for m in at.markdown)
+    assert any("Old topic about agents" in t.value for t in at.title)
 
 
 def test_sidebar_saves_keys_to_env_file(tmp_path, monkeypatch):
@@ -54,12 +54,12 @@ def test_sidebar_saves_keys_to_env_file(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text("# existing\n")
     at = AppTest.from_file(str(APP), default_timeout=30).run()
     form_inputs = {t.label: t for t in at.sidebar.text_input}
-    form_inputs["S2_API_KEY"].input("s2-secret")
+    form_inputs["Semantic Scholar key"].input("s2-secret")
     save = next(b for b in at.sidebar.button if "source keys" in b.label)
     save.click().run()
     assert not at.exception
     assert "S2_API_KEY=s2-secret" in (tmp_path / ".env").read_text()
-    assert any("✅ `S2_API_KEY`" in m.value for m in at.sidebar.markdown)
+    assert any("✅ Semantic Scholar key" in m.value for m in at.sidebar.markdown)
 
 
 def test_provider_selector_and_key_form(tmp_path, monkeypatch):
@@ -68,8 +68,8 @@ def test_provider_selector_and_key_form(tmp_path, monkeypatch):
     prov = next(s for s in at.sidebar.selectbox if s.label == "Provider")
     assert prov.value == "anthropic"
     prov.select("openai").run()
-    assert any("OPENAI_API_KEY" in t.label for t in at.sidebar.text_input)
-    next(t for t in at.sidebar.text_input if t.label == "OPENAI_API_KEY").input("sk-openai")
+    assert any("OpenAI API key" in t.label for t in at.sidebar.text_input)
+    next(t for t in at.sidebar.text_input if t.label == "OpenAI API key").input("sk-openai")
     next(b for b in at.sidebar.button if "provider keys" in b.label).click().run()
     assert not at.exception
     text = (tmp_path / ".env").read_text()
@@ -90,14 +90,15 @@ def test_selecting_past_run_prefills_form(tmp_path, monkeypatch):
     next(s for s in at.sidebar.selectbox if s.label == "Open a run").select("r1").run()
     assert not at.exception
     inputs = {t.label: t.value for t in at.text_input}
-    assert inputs["Research topic *"] == "XAI for IoT intrusion detection"
-    assert inputs["Academic discipline (optional)"] == "cybersecurity"
+    assert inputs["Research topic"] == "XAI for IoT intrusion detection"
+    assert inputs["Field or discipline (optional)"] == "cybersecurity"
     assert inputs["Model"] == "gpt-5"
     nums = {n.label: n.value for n in at.number_input}
-    assert nums["From year (1900 = no limit)"] == 2019 and nums["To year (0 = present)"] == 2024
+    assert nums["From year"] == 2019 and nums["To year"] == 2024
     assert nums["Max papers analysed"] == 33 and nums["Validation rounds"] == 3 and nums["Open-access full texts to fetch"] == 7
-    assert next(m for m in at.multiselect if m.label == "Sources").value == ["openalex", "pubmed"]
-    assert next(s for s in at.selectbox if s.label == "Priority").value == "applied"
+    assert next(m for m in at.multiselect if m.label == "Databases to search").value == ["openalex", "pubmed"]
+    assert next(s for s in at.selectbox if s.label == "Kind of contribution").value == "applied"
+    assert next(r for r in at.radio if r.label.startswith("How deep")).value == "Custom"
     assert next(s for s in at.selectbox if s.label == "LLM provider").value == "openai"
 
 
