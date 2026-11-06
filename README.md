@@ -116,3 +116,7 @@ python -m pytest -q
 - [`docs/USAGE.md`](docs/USAGE.md): full reference for every stage, source, provider and option
 - [`docs/DESIGN.md`](docs/DESIGN.md): design rationale, data model and acceptance criteria
 - [`docs/EVALUATION.md`](docs/EVALUATION.md): evaluation strategy and reference topics
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
