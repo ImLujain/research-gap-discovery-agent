@@ -36,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
                         "ollama, lmstudio, openai-compatible (default: RGA_LLM_PROVIDER or auto-detected from which key is set)")
     p.add_argument("--model", default=None, help="Model id for the provider (default: RGA_LLM_MODEL or the provider's default)")
     p.add_argument("--base-url", default=None, help="Base URL for openai-compatible/self-hosted servers (RGA_LLM_BASE_URL)")
+    p.add_argument("--screen-model", default=None,
+                   help="Cheaper model for title/abstract screening (default: RGA_SCREEN_MODEL or the provider's fast model, "
+                        "e.g. claude-haiku-5-5 for Anthropic; 'main' = use the main model)")
+    p.add_argument("--concurrency", type=int, default=None,
+                   help="How many model calls may run at once for screening, extraction and gap validation "
+                        "(default: RGA_LLM_CONCURRENCY or 4; 1 = strictly sequential)")
     p.add_argument("--run-id")
     p.add_argument("--resume", metavar="RUN_ID", help="Resume an interrupted run")
     p.add_argument("--until", choices=["plan", "discover", "screen", "fulltext", "extract", "landscape", "generate_gaps", "validate",
@@ -65,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
         settings.model = args.model
     if args.base_url:
         settings.llm_base_url = args.base_url
+    if args.screen_model:
+        settings.screen_model = args.screen_model
+    if args.concurrency:
+        settings.llm_concurrency = args.concurrency
     from .llm import build_llm
 
     llm = build_llm(settings)

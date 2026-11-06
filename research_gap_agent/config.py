@@ -116,6 +116,10 @@ class Settings:
     azure_api_version: str = field(default_factory=lambda: os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21"))
     http_timeout: float = 30.0
     llm_timeout: float = field(default_factory=lambda: float(os.environ.get("RGA_LLM_TIMEOUT", "1800")))  # seconds
+    # Cheaper/faster model for title-abstract screening; blank = the provider's fast model, "main" = same as the main model
+    screen_model: str | None = field(default_factory=lambda: os.environ.get("RGA_SCREEN_MODEL") or None)
+    # How many independent model calls may run at once (screening batches, evidence batches, gap validations)
+    llm_concurrency: int = field(default_factory=lambda: int(os.environ.get("RGA_LLM_CONCURRENCY", "4")))
 
     def resolved_user_agent(self) -> str:
         return self.user_agent.format(mailto=self.mailto or "unset")

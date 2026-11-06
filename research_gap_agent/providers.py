@@ -17,11 +17,13 @@ class ProviderPreset:
     strict_json_schema: bool = True  # whether to try OpenAI strict structured outputs first
     reasoning_effort: bool = False  # whether the API accepts `reasoning_effort`
     note: str = ""
+    fast_model: str = ""  # cheaper model used for screening by default; blank = use the main model
 
 
 PROVIDERS: dict[str, ProviderPreset] = {p.name: p for p in [
     ProviderPreset("anthropic", "anthropic", "ANTHROPIC_API_KEY", None, "claude-opus-5-5",
-                   note="Native Claude API with structured outputs and server-side fallbacks."),
+                   note="Native Claude API with structured outputs and server-side fallbacks.",
+                   fast_model="claude-haiku-5-5"),
     ProviderPreset("openai", "openai", "OPENAI_API_KEY", None, "gpt-5", reasoning_effort=True,
                    note="OpenAI platform."),
     ProviderPreset("azure", "azure", "AZURE_OPENAI_API_KEY", None, "gpt-4o",

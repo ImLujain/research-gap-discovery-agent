@@ -100,7 +100,18 @@ Strong reasoning models give noticeably better gap validation. Small local model
 | `OPENALEX_API_KEY`, `S2_API_KEY` | Recommended | Your own rate-limit budget instead of a shared one. Both are free |
 | `NCBI_API_KEY`, `GITHUB_TOKEN`, `SERPAPI_KEY` | Optional | Higher limits for PubMed and GitHub. SerpAPI (paid) enables Google Scholar |
 
-A typical run makes 40 to 60 model calls. The end of each report prints the token usage. Lower `--max-papers` or `--validation-rounds` to spend less.
+A typical run makes 100 to 150 model calls. The end of each report prints the token usage. Lower `--max-papers` or `--validation-rounds` to spend less.
+
+## Speed
+
+Screening every retrieved paper is the slowest part of a run, so two things happen by default:
+
+- Screening uses a cheaper, faster model (Claude Haiku 5.5 when the main model is Claude). Everything that needs judgement, such as proposing, validating and ranking gaps, still uses the main model. Set `RGA_SCREEN_MODEL=main` to turn this off.
+- Independent model calls run four at a time: screening batches, evidence extraction, and the validation of each gap. Set `RGA_LLM_CONCURRENCY=1` for strictly sequential runs, or raise it if your API account allows.
+
+```bash
+research-gap-agent "topic" --concurrency 6 --screen-model claude-haiku-5-5
+```
 
 ## Honest limits
 

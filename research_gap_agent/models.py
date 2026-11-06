@@ -523,6 +523,7 @@ class RunOptions(BaseModel):
     max_full_text: int = 20  # open-access full texts to fetch and analyse (0 disables)
     provider: str = "anthropic"
     model: str = "claude-opus-5-5"
+    screen_model: Optional[str] = None  # cheaper model used for screening; "" = main model; None = decide at run start
 
 
 class LLMCallLog(BaseModel):

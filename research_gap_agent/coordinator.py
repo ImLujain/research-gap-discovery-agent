@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,11 +16,12 @@ from .config import Settings
 from .discovery import LiteratureDiscovery
 from .export import to_bibtex, to_csv, to_ris
 from .fulltext import FullTextFetcher
-from .llm import LLM
+from .llm import LLM, screen_model_for
 from .models import (
     CandidateGap, CounterEvidence, EvidenceStatement, Paper, RunOptions, RunState, ScreeningDecision,
     ValidatedGap, ValidationRound, ValidationStatus,
 )
+from .parallel import run_parallel
 from .report import write_report_files
 from .sources import NOT_SEARCHABLE, build_sources
 from .sources.base import Source
@@ -58,6 +60,11 @@ class Coordinator:
         self.context = goal_block(self.opts.goal, self.opts.existing_work)
         self.report_path: Optional[Path] = None
         self.export_paths: dict[str, Path] = {}
+        self._state_lock = threading.RLock()  # guards save() and validated_gaps when gaps are validated in parallel
+        self.concurrency = max(1, int(getattr(self.settings, "llm_concurrency", 1) or 1))
+        if self.opts.screen_model is None:
+            self.opts.screen_model = screen_model_for(self.settings, self.llm) or ""
+        self.screen_model: Optional[str] = self.opts.screen_model or None
 
     # ------------------------------------------------------------------ persistence
     @property
@@ -65,9 +72,10 @@ class Coordinator:
         return self.run_dir / "state.json"
 
     def save(self) -> None:
-        self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.state.llm_calls = list(self.llm.call_log)
-        self.state_path.write_text(self.state.model_dump_json(indent=1))
+        with self._state_lock:
+            self.run_dir.mkdir(parents=True, exist_ok=True)
+            self.state.llm_calls = list(self.llm.call_log)
+            self.state_path.write_text(self.state.model_dump_json(indent=1))
 
     @classmethod
     def resume(cls, run_id: str, llm: LLM, *, settings: Optional[Settings] = None,
@@ -100,7 +108,8 @@ class Coordinator:
         return next((s for s in self.sources if isinstance(s, cls)), None)
 
     def _known(self) -> set[str]:
-        return set(self.state.papers)
+        with self.discovery.lock:
+            return set(self.state.papers)
 
     # ------------------------------------------------------------------ run
     def run(self, until: Optional[str] = None) -> RunState:
@@ -155,8 +164,11 @@ class Coordinator:
             f"Out of scope: {', '.join(plan.related_areas_excluded)}"
         )
         papers = [p for p in self.state.papers.values() if p.screening is None]
-        self.progress(f"[screen] screening {len(papers)} records in batches of 25")
-        decisions = screening.screen_papers(self.llm, papers, criterion, progress=self.progress)
+        self.progress(f"[screen] screening {len(papers)} records in batches of 25"
+                      + (f", {self.concurrency} batches at a time" if self.concurrency > 1 else "")
+                      + (f", model {self.screen_model}" if self.screen_model else ""))
+        decisions = screening.screen_papers(self.llm, papers, criterion, progress=self.progress,
+                                            model=self.screen_model, concurrency=self.concurrency)
         for d in decisions:
             p = self.state.papers.get(d.paper_id)
             if p is not None:
@@ -199,7 +211,7 @@ class Coordinator:
         texts = {p.id: t for p in papers if p.has_full_text and (t := self.fulltext.load(p))}
         self.progress(f"[extract] extracting evidence from {len(papers)} papers ({len(texts)} with full text)")
         self.state.evidence_rows = analysis.extract_evidence(self.llm, papers, self.opts.topic, full_texts=texts,
-                                                             progress=self.progress)
+                                                             progress=self.progress, concurrency=self.concurrency)
 
     def stage_landscape(self) -> None:
         land = analysis.build_landscape(self.llm, self.state.evidence_rows, self.state.papers, self.opts.topic)
@@ -251,19 +263,41 @@ class Coordinator:
 
     # ------------------------------------------------------------------ validation loop
     def stage_validate(self) -> None:
-        """Validate each candidate gap; progress is checkpointed per gap so an interrupted stage resumes mid-way."""
+        """Validate each candidate gap; progress is checkpointed per gap so an interrupted stage resumes mid-way.
+
+        Gaps are independent, so up to ``concurrency`` are validated at once. Each gap's searches go through the
+        discovery lock, and each finished gap is appended to the state and saved under the state lock.
+        """
         done = {v.gap.id for v in self.state.validated_gaps}
+        n = len(self.state.candidate_gaps)
+        pending: list[tuple[int, CandidateGap]] = []
         for i, gap in enumerate(self.state.candidate_gaps, 1):
             if gap.id in done:
-                self.progress(f"[validate] gap {i}/{len(self.state.candidate_gaps)} {gap.id} already validated — skipping")
-                continue
+                self.progress(f"[validate] gap {i}/{n} {gap.id} already validated — skipping")
+            else:
+                pending.append((i, gap))
+        workers = min(self.concurrency, len(pending)) or 1
+        self._validation_inner_concurrency = max(1, self.concurrency // workers)
+        if workers > 1:
+            self.progress(f"[validate] validating {len(pending)} gaps, {workers} at a time")
+
+        def work(item: tuple[int, CandidateGap]) -> ValidatedGap:
+            i, gap = item
             self._check_stop(f"validation of {gap.id}")
-            self.progress(f"[validate] gap {i}/{len(self.state.candidate_gaps)} {gap.id}: {gap.title}")
+            self.progress(f"[validate] gap {i}/{n} {gap.id}: {gap.title}")
             result = self._validate_gap(gap)
-            self.state.validated_gaps.append(result)
-            self.save()
+            with self._state_lock:
+                self.state.validated_gaps.append(result)
+                self.save()
             self.progress(f"[validate] {gap.id} → {result.status.value}" + (" (rejected)" if result.rejected else "")
                           + " (checkpoint saved)")
+            return result
+
+        try:
+            run_parallel(work, pending, workers)
+        finally:
+            order = {g.id: k for k, g in enumerate(self.state.candidate_gaps)}
+            self.state.validated_gaps.sort(key=lambda v: order.get(v.gap.id, len(order)))
 
     def _validate_gap(self, original: CandidateGap) -> ValidatedGap:
         gap = original
@@ -310,7 +344,9 @@ class Coordinator:
             if to_screen:
                 crit = (f"Relevant to this candidate research gap (include papers that address, partially address, "
                         f"contradict, or provide preliminary evidence about it):\n{gap.title}\n{gap.what_is_missing}")
-                decisions = screening.screen_papers(self.llm, [self.state.papers[i] for i in to_screen], crit)
+                decisions = screening.screen_papers(self.llm, [self.state.papers[i] for i in to_screen], crit,
+                                                    model=self.screen_model,
+                                                    concurrency=getattr(self, "_validation_inner_concurrency", 1))
                 for d in decisions:
                     p = self.state.papers.get(d.paper_id)
                     if p is None:

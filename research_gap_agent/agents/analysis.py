@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ..llm import LLM
+from ..parallel import run_parallel
 from ..models import EvidenceRow, ExtractionOutput, LandscapeOutput, Paper, StateOfArtOutput
 from .common import INTEGRITY_RULES, format_evidence, format_paper, format_papers, format_rows, format_themes
 
@@ -38,15 +39,18 @@ Full paragraphs, no bullet lists, no headings inside the prose.
 
 
 def extract_evidence(llm: LLM, papers: list[Paper], topic: str, *, batch_size: int = 8,
-                     effort: str = "medium", full_texts: dict[str, str] | None = None, progress=None) -> list[EvidenceRow]:
-    """Extract one evidence row per paper. Papers with full text are sent one or two per call; the rest in batches."""
+                     effort: str = "medium", full_texts: dict[str, str] | None = None, progress=None,
+                     concurrency: int = 1) -> list[EvidenceRow]:
+    """Extract one evidence row per paper. Papers with full text are sent one or two per call; the rest in batches.
+    Batches are independent, so up to ``concurrency`` run at once; rows come back in batch order."""
     full_texts = full_texts or {}
-    rows: list[EvidenceRow] = []
     with_ft = [p for p in papers if p.id in full_texts]
     without = [p for p in papers if p.id not in full_texts]
     batches = [with_ft[i:i + 2] for i in range(0, len(with_ft), 2)] + \
               [without[i:i + batch_size] for i in range(0, len(without), batch_size)]
-    for bi, batch in enumerate(batches, 1):
+
+    def one(item: tuple[int, list[Paper]]) -> list[EvidenceRow]:
+        bi, batch = item
         if progress:
             progress(f"[extract] batch {bi}/{len(batches)}: {', '.join(p.id for p in batch)} → model")
         blocks = []
@@ -59,8 +63,10 @@ def extract_evidence(llm: LLM, papers: list[Paper], topic: str, *, batch_size: i
         out = llm.structured(task="extract", system=EXTRACT_SYSTEM, user=user, output_model=ExtractionOutput,
                              effort=effort)
         wanted = {p.id for p in batch}
-        rows.extend(r for r in out.rows if r.paper_id in wanted)
-    return rows
+        return [r for r in out.rows if r.paper_id in wanted]
+
+    results = run_parallel(one, list(enumerate(batches, 1)), concurrency)
+    return [r for batch in results for r in batch]
 
 
 def build_landscape(llm: LLM, rows: list[EvidenceRow], papers: dict[str, Paper], topic: str,

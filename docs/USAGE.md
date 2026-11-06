@@ -137,6 +137,20 @@ bot-challenge page and is not usable programmatically.
 * Paywalled full texts: only open-access PDFs are read. The report states exactly which papers had full text.
 * IEEE Xplore, ACM DL, DBLP search.
 
+## Speed
+
+Title/abstract screening dominates run time (about half of a Standard run: 1,500 or more records, 25 per call), with
+per-gap validation second. Two settings address this, both on by default:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `RGA_SCREEN_MODEL` / `--screen-model` | provider's fast model (`claude-haiku-5-5` for Anthropic; none for other providers) | model used for the `screen` task only, in discovery and in validation. `main` disables it. |
+| `RGA_LLM_CONCURRENCY` / `--concurrency` | 4 | screening batches, evidence-extraction batches and gap validations run this many at a time; 1 is strictly sequential |
+
+Parallel validation keeps the per-gap checkpointing: each finished gap is saved immediately, search ids stay unique under a
+lock, and `validated_gaps` is re-ordered to the candidate order at the end of the stage. A stop request takes effect once
+the gaps already in flight finish.
+
 ## Cost
 
 Defaults to `claude-opus-5-5` for every stage. A typical run (60 papers analysed, 5 gaps, 2 validation rounds) makes roughly 40–60 model calls; the report's final section prints token usage. Lower `--max-papers` or `--validation-rounds` to reduce cost.
