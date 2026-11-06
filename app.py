@@ -636,8 +636,8 @@ with tab_runs:
         st.info("No saved investigations yet. Every run is saved automatically and listed here.")
     else:
         complete_n = sum(1 for _, s in runs if len(s.stages_completed) == len(STAGES))
-        st.markdown(f'<p class="rga-hero">{len(runs)} saved · {complete_n} complete · {len(runs) - complete_n} incomplete</p>',
-                    unsafe_allow_html=True)
+        st.markdown(f'<p class="rga-hero">{len(runs)} saved · {complete_n} complete · {len(runs) - complete_n} incomplete. '
+                    'Incomplete runs continue from their last finished step with <b>Resume</b>.</p>', unsafe_allow_html=True)
         f1, f2 = st.columns([3, 1])
         query = f1.text_input("Search", key="run_filter", placeholder="Search by topic…", label_visibility="collapsed")
         show = f2.selectbox("Show", ["All", "Complete", "Incomplete"], key="run_show", label_visibility="collapsed")
@@ -653,10 +653,20 @@ with tab_runs:
             is_open = selected_run == rid
             o = s.options
             with st.container(border=True):
-                info, b_open, b_again, b_del = st.columns([6, 1.1, 1.3, 1.1])
+                incomplete = len(s.stages_completed) < len(STAGES)
+                running = rid in {j["run_id"] for j in st.session_state.get("jobs", []) if j["status"] == "running"}
+                info, b_resume, b_open, b_again, b_del = st.columns([6, 1.3, 1.1, 1.3, 1.1])
                 info.markdown(f"**{o.topic}**  \n<span class='rga-muted'>{s.created_at.strftime('%d %b %Y, %H:%M')} · "
                               f"{run_status(rid, s)} · {len(s.papers)} papers · {provider_label(o.provider)}</span>",
                               unsafe_allow_html=True)
+                if incomplete and not running:
+                    nxt = next((x for x in STAGES if x not in s.stages_completed), None)
+                    if b_resume.button("Resume", key=f"resume_{rid}", type="primary", width="stretch",
+                                       help=f"Continue from the next step: {STAGE_INFO[nxt][0] if nxt else 'report'}"):
+                        _select_run(rid)
+                        start_job(None, rid, st.session_state.get("f_provider"), st.session_state.get("f_model"),
+                                  st.session_state.get("f_base_url") or None)
+                        st.rerun()
                 b_open.button("Opened" if is_open else "Open", key=f"open_{rid}", width="stretch", disabled=is_open,
                               on_click=_select_run, args=(rid,), help="Show this run in the Results tab")
                 b_again.button("Run again", key=f"again_{rid}", width="stretch", on_click=_reuse_settings, args=(rid,),

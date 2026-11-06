@@ -133,3 +133,19 @@ def test_form_defaults_do_not_trigger_session_state_warning(tmp_path, monkeypatc
         at = AppTest.from_file(str(APP), default_timeout=30).run()
     assert not at.exception
     assert not [r for r in caplog.records if "Session State API" in r.getMessage()]
+
+
+def test_resume_button_in_run_list_starts_a_job(tmp_path, monkeypatch):
+    """Clicking Resume on an incomplete run must not crash the page (it starts a background job and reruns)."""
+    runs = tmp_path / "runs"
+    monkeypatch.setenv("RGA_RUNS_DIR", str(runs))
+    from research_gap_agent.models import RunOptions, RunState
+
+    st = RunState(run_id="half", options=RunOptions(topic="Half-done topic"), stages_completed=["plan", "discover"])
+    (runs / "half").mkdir(parents=True)
+    (runs / "half" / "state.json").write_text(st.model_dump_json())
+    at = AppTest.from_file(str(APP), default_timeout=30).run()
+    at.button(key="resume_half").click().run()
+    assert not at.exception
+    assert at.session_state["selected_run"] == "half"
+    assert at.session_state["jobs"] and at.session_state["jobs"][0]["run_id"] == "half"
