@@ -42,6 +42,7 @@ def test_app_lists_past_runs_and_shows_report(tmp_path, monkeypatch):
     assert not at.exception
     card = next(m for m in at.markdown if "Old topic about agents" in m.value)
     assert "1 of 12 steps" in card.value
+    assert at.button(key="resume_old1") is not None  # incomplete runs get a Resume button in the list
     at.button(key="open_old1").click().run()
     assert not at.exception
     assert any("incomplete" in w.value for w in at.warning)

@@ -38,8 +38,8 @@ has three tabs. *New investigation* is a form with plain labels and three depth 
 round, Standard ≈ 60 / 2, Thorough ≈ 120 / 3) plus a Custom option that exposes the exact numbers under *Advanced
 settings*; while a run is in progress it shows a twelve-step progress bar with a plain-language description of the current
 step, and the raw log sits in a collapsible *Technical log*. *Previous investigations* lists every saved run with its date,
-status and paper count, searchable and filterable, with Open, Run again (copies the settings into the form) and Delete
-(with confirmation). *Results* shows the recommended next step, the surviving gaps as ranked cards with status badges
+status and paper count, searchable and filterable, with Resume (incomplete runs only; continues from the last
+finished step), Open, Run again (copies the settings into the form) and Delete (with confirmation). *Results* shows the recommended next step, the surviving gaps as ranked cards with status badges
 (open gap, early work only, conflicting findings, partly addressed, could not verify), the rejected candidates with their
 counter-evidence, the full HTML report, a filterable paper table with links, and the search log. Both colour themes are
 defined in `.streamlit/config.toml`.
