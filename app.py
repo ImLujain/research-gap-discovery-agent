@@ -142,6 +142,8 @@ st.markdown("""
   .rga-ok { color: #2E7D32; } .rga-warn { color: #B26A00; } .rga-bad { color: #B3261E; } .rga-grey { opacity: 0.6; }
   div[data-testid="stMetric"] { border-left: 2px solid rgba(127,127,127,0.35); padding-left: 0.8rem; }
   [data-testid="stSidebar"] .stMarkdown p { margin-bottom: 0.3rem; }
+  .st-key-theme_light button, .st-key-theme_dark button { min-height: 2.4rem; overflow: visible; }
+  .st-key-theme_light button span, .st-key-theme_dark button span { font-size: 1.25rem; line-height: 1; overflow: visible; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -397,14 +399,11 @@ if st.session_state.get("prefill_run"):
 with st.sidebar:
     st.title("Research Gap Agent")
     st.caption("Finds research gaps in the literature and checks its own findings before showing them to you.")
-    with st.popover("Appearance", help="Switch between light and dark mode. 'System' follows your device setting."):
-        t1, t2, t3 = st.columns(3)
-        if t1.button("Light", key="theme_light", width="stretch"):
-            apply_theme("Light")
-        if t2.button("Dark", key="theme_dark", width="stretch"):
-            apply_theme("Dark")
-        if t3.button("System", key="theme_system", width="stretch"):
-            apply_theme("System")
+    t1, t2 = st.columns(2)
+    if t1.button(":material/light_mode:", key="theme_light", help="Light theme", width="stretch"):
+        apply_theme("Light")
+    if t2.button(":material/dark_mode:", key="theme_dark", help="Dark theme", width="stretch"):
+        apply_theme("Dark")
 
     st.subheader("Setup")
     detected = detect_provider()

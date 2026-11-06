@@ -1,5 +1,4 @@
-# Theme. Both palettes are defined, so the app offers Light / Dark / System in the sidebar
-# (Appearance) and in the ☰ menu under Settings.
+# Theme. Both palettes are defined; the sidebar has light/dark buttons and the ☰ menu (Settings) also offers System.
 [theme]
 font = "sans serif"
 
