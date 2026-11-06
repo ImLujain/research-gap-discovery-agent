@@ -32,15 +32,18 @@ Progress is printed to stderr; the report, full run state, and reference exports
 streamlit run app.py
 ```
 
-A single-page interface designed for people who do not use the command line. The sidebar is a three-step setup
-(AI model key, optional database keys, previous investigations); keys are saved to `.env`. The form uses plain
-labels and three depth presets (Quick ≈ 30 papers / 1 validation round, Standard ≈ 60 / 2, Thorough ≈ 120 / 3) plus
-a Custom option that exposes the exact numbers under *Advanced settings*. While a run is in progress the page shows a
-twelve-step progress bar with a plain-language description of the current step; the raw log sits in a collapsible
-*Technical log*. The Results tab shows the recommended next step, the surviving gaps as ranked cards with status badges
-(open gap, early work only, conflicting findings, partly addressed, could not verify), the rejected candidates with
-their counter-evidence, the full HTML report, a filterable paper table with links, and the search log. The theme lives
-in `.streamlit/config.toml`.
+An interface designed for people who do not use the command line. The sidebar holds setup only: an Appearance switch
+(light, dark or system theme), the AI model key, and the optional database keys; keys are saved to `.env`. The main area
+has three tabs. *New investigation* is a form with plain labels and three depth presets (Quick ≈ 30 papers / 1 validation
+round, Standard ≈ 60 / 2, Thorough ≈ 120 / 3) plus a Custom option that exposes the exact numbers under *Advanced
+settings*; while a run is in progress it shows a twelve-step progress bar with a plain-language description of the current
+step, and the raw log sits in a collapsible *Technical log*. *Previous investigations* lists every saved run with its date,
+status and paper count, searchable and filterable, with Open, Run again (copies the settings into the form) and Delete
+(with confirmation). *Results* shows the recommended next step, the surviving gaps as ranked cards with status badges
+(open gap, early work only, conflicting findings, partly addressed, could not verify), the rejected candidates with their
+counter-evidence, the full HTML report, a filterable paper table with links, and the search log. Both colour themes are
+defined in `.streamlit/config.toml`.
+
 Interrupted runs resume from the last completed stage:
 
 ```bash

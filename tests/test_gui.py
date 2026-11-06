@@ -40,10 +40,9 @@ def test_app_lists_past_runs_and_shows_report(tmp_path, monkeypatch):
     (runs / "old1" / "state.json").write_text(st.model_dump_json())
     at = AppTest.from_file(str(APP), default_timeout=30).run()
     assert not at.exception
-    sb = next(s for s in at.sidebar.selectbox if s.label == "Open a run")
-    label = next(o for o in sb.options if o.endswith("old1"))
-    assert "1/12 stages" in label and label.startswith("Old topic about agents")
-    sb.select("old1").run()  # select by raw value; options are shown with formatted labels
+    card = next(m for m in at.markdown if "Old topic about agents" in m.value)
+    assert "1 of 12 steps" in card.value
+    at.button(key="open_old1").click().run()
     assert not at.exception
     assert any("incomplete" in w.value for w in at.warning)
     assert any("Old topic about agents" in t.value for t in at.title)
@@ -76,7 +75,7 @@ def test_provider_selector_and_key_form(tmp_path, monkeypatch):
     assert "OPENAI_API_KEY=sk-openai" in text and "RGA_LLM_PROVIDER=openai" in text
 
 
-def test_selecting_past_run_prefills_form(tmp_path, monkeypatch):
+def test_run_again_button_prefills_form(tmp_path, monkeypatch):
     runs = tmp_path / "runs"
     monkeypatch.setenv("RGA_RUNS_DIR", str(runs))
     from research_gap_agent.models import RunOptions, RunState
@@ -87,7 +86,10 @@ def test_selecting_past_run_prefills_form(tmp_path, monkeypatch):
     (runs / "r1").mkdir(parents=True)
     (runs / "r1" / "state.json").write_text(RunState(run_id="r1", options=opts).model_dump_json())
     at = AppTest.from_file(str(APP), default_timeout=30).run()
-    next(s for s in at.sidebar.selectbox if s.label == "Open a run").select("r1").run()
+    at.button(key="open_r1").click().run()
+    assert not at.exception
+    assert any("XAI for IoT" in t.value for t in at.title)  # opened in Results
+    at.button(key="again_r1").click().run()  # copy its settings into the form
     assert not at.exception
     inputs = {t.label: t.value for t in at.text_input}
     assert inputs["Research topic"] == "XAI for IoT intrusion detection"

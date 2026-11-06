@@ -1,13 +1,22 @@
+# Theme. Both palettes are defined, so the app offers Light / Dark / System in the sidebar
+# (Appearance) and in the ☰ menu under Settings.
 [theme]
-base = "light"
+font = "sans serif"
+
+[theme.light]
 primaryColor = "#2563EB"
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F3F5F9"
 textColor = "#1F2937"
-font = "sans serif"
+
+[theme.dark]
+primaryColor = "#60A5FA"
+backgroundColor = "#0F172A"
+secondaryBackgroundColor = "#1E293B"
+textColor = "#E5E7EB"
 
 [client]
-toolbarMode = "minimal"
+toolbarMode = "viewer"
 
 [browser]
 gatherUsageStats = false

@@ -43,7 +43,8 @@ streamlit run app.py
 
 The app opens in your browser. Paste your API key once in the sidebar, type a topic, pick a depth
 (Quick, Standard or Thorough), and click Start. You can watch each of the twelve steps run, stop and
-resume a run, and read the ranked gaps, the full report and every paper found without touching a terminal.
+resume a run, browse and rerun previous investigations, and read the ranked gaps, the full report and
+every paper found without touching a terminal. Light and dark themes are built in.
 
 ## How it works
 

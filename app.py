@@ -134,15 +134,17 @@ st.markdown("""
 <style>
   .block-container { padding-top: 2rem; max-width: 1180px; }
   h1 { font-weight: 700; letter-spacing: -0.01em; }
-  .rga-hero { color: #4B5563; font-size: 1.05rem; margin-top: -0.4rem; margin-bottom: 1.2rem; }
+  .rga-hero { opacity: 0.75; font-size: 1.05rem; margin-top: -0.4rem; margin-bottom: 1.2rem; }
   .rga-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
                color: white; margin-right: 6px; vertical-align: middle; }
-  .rga-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.76rem; background: #EEF2FF;
-              color: #3730A3; margin-right: 6px; vertical-align: middle; }
-  .rga-muted { color: #6B7280; font-size: 0.86rem; }
-  .rga-rank { font-size: 1.6rem; font-weight: 700; color: #2563EB; line-height: 1; }
-  div[data-testid="stMetric"] { background: #F3F5F9; border-radius: 10px; padding: 0.8rem 1rem; }
+  .rga-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.76rem;
+              background: rgba(37, 99, 235, 0.14); color: inherit; margin-right: 6px; vertical-align: middle; }
+  .rga-muted { opacity: 0.65; font-size: 0.86rem; }
+  .rga-rank { font-size: 1.6rem; font-weight: 700; color: #3B82F6; line-height: 1; }
+  div[data-testid="stMetric"] { background: rgba(127, 127, 127, 0.10); border-radius: 10px; padding: 0.8rem 1rem; }
   [data-testid="stSidebar"] .stMarkdown p { margin-bottom: 0.3rem; }
+  [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] { padding: 0.35rem 0.6rem 0.2rem 0.6rem; }
+  [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] p { margin-bottom: 0.15rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -326,6 +328,52 @@ def job_title(job: dict) -> str:
     return f"{job['label']} · {job['status'].replace('_', ' ')} · {stage}"
 
 
+def apply_theme(name: str) -> None:
+    """Persist the chosen theme the same way Streamlit's own Settings menu does, then reload the page."""
+    import streamlit.components.v1 as components
+
+    components.html(f"""<script>
+      const p = window.parent;
+      p.localStorage.setItem(`stActiveTheme-${{p.location.pathname}}-v2`, JSON.stringify("{name}"));
+      p.location.reload();
+    </script>""", height=0)
+
+
+def _select_run(rid: str) -> None:
+    st.session_state["selected_run"] = rid
+    st.session_state["confirm_delete"] = None
+
+
+def _ask_delete(rid: str | None) -> None:
+    st.session_state["confirm_delete"] = rid
+
+
+def _reuse_settings(rid: str) -> None:
+    st.session_state["prefill_run"] = rid
+
+
+def delete_run(rid: str) -> None:
+    import shutil
+
+    shutil.rmtree(settings().runs_dir / rid, ignore_errors=True)
+    if st.session_state.get("selected_run") == rid:
+        st.session_state["selected_run"] = None
+    st.session_state["confirm_delete"] = None
+
+
+def run_status(rid: str, s: RunState) -> str:
+    running = {j["run_id"] for j in st.session_state.get("jobs", []) if j["status"] == "running"}
+    n = len(s.stages_completed)
+    if rid in running:
+        return "🟢 Running"
+    if n == len(STAGES):
+        gaps = len([v for v in s.validated_gaps if not v.rejected])
+        return f"✅ Complete · {gaps} gap{'s' if gaps != 1 else ''}"
+    if n == 0:
+        return "⚪ Not started"
+    return f"⏸ {n} of {len(STAGES)} steps"
+
+
 def credential_form(form_key: str, fields: list[tuple[str, str, bool, str]], button: str, extra: dict | None = None) -> None:
     with st.form(form_key):
         entered = {}
@@ -345,38 +393,57 @@ def credential_form(form_key: str, fields: list[tuple[str, str, bool, str]], but
                 st.info("Nothing entered.")
 
 
+if st.session_state.get("prefill_run"):
+    _rid = st.session_state.pop("prefill_run")
+    _sp = settings().runs_dir / _rid / "state.json"
+    if _sp.exists():
+        prefill_form_from(RunState.model_validate(json.loads(_sp.read_text())))
+        st.toast("Settings copied into the New investigation form.", icon="✅")
+
 # ----------------------------------------------------------------------------- sidebar: setup
 with st.sidebar:
     st.title("🔬 Research Gap Agent")
     st.caption("Finds research gaps in the literature and checks its own findings before showing them to you.")
+    with st.popover("🌗 Appearance", help="Switch between light and dark mode. 'System' follows your device setting."):
+        t1, t2, t3 = st.columns(3)
+        if t1.button("Light", key="theme_light", width="stretch"):
+            apply_theme("Light")
+        if t2.button("Dark", key="theme_dark", width="stretch"):
+            apply_theme("Dark")
+        if t3.button("System", key="theme_system", width="stretch"):
+            apply_theme("System")
 
-    st.subheader("1. AI model")
+    st.subheader("Setup")
     detected = detect_provider()
-    chosen_provider = st.selectbox("Provider", list(PROVIDERS), index=list(PROVIDERS).index(detected), key="sb_provider",
-                                   format_func=provider_label,
-                                   help="Picked automatically from whichever key you have saved. Anthropic (Claude) gives the best results.")
-    ready, why = provider_ready(chosen_provider)
-    preset = PROVIDERS[chosen_provider]
+    ready, why = provider_ready(detected)
     if ready:
-        st.success(f"{provider_label(chosen_provider)} is ready. Model: `{preset.default_model or 'set below'}`.", icon="✅")
+        st.success(f"AI model: {provider_label(detected)}", icon="✅")
     else:
-        st.warning(f"{provider_label(chosen_provider)}: {why}. Add it below.", icon="⚠️")
-    with st.expander("Add or change the model key", expanded=not ready):
+        st.warning(f"AI model: {provider_label(detected)} has {why}", icon="⚠️")
+    with st.expander("AI model settings", expanded=not ready):
+        chosen_provider = st.selectbox("Provider", list(PROVIDERS), index=list(PROVIDERS).index(detected), key="sb_provider",
+                                       format_func=provider_label,
+                                       help="Picked automatically from whichever key you have saved. Anthropic (Claude) gives the best results.")
+        ready, why = provider_ready(chosen_provider)
+        preset = PROVIDERS[chosen_provider]
+        st.caption(f"Default model: `{preset.default_model or 'set one under Advanced settings'}`."
+                   + (f" {preset.note}" if preset.note else ""))
         credential_form("provider_cred_form", PROVIDER_FIELDS[chosen_provider], "Save provider keys",
                         extra={"RGA_LLM_PROVIDER": chosen_provider})
-    if st.button("Test connection", help="Makes one tiny model call with the saved key to confirm everything works."):
-        with st.spinner("Calling the model…"):
-            ok_conn, msg = test_llm_connection(chosen_provider, st.session_state.get("f_model") or None,
-                                               st.session_state.get("f_base_url") or None)
-        (st.success if ok_conn else st.error)(msg)
+        if st.button("Test connection", help="Makes one tiny model call with the saved key to confirm everything works."):
+            with st.spinner("Calling the model…"):
+                ok_conn, msg = test_llm_connection(chosen_provider, st.session_state.get("f_model") or None,
+                                                   st.session_state.get("f_base_url") or None)
+            (st.success if ok_conn else st.error)(msg)
 
-    st.subheader("2. Literature databases")
-    st.caption("All work without keys. The first two settings make searches faster and more reliable.")
-    for env, label, _, _ in SOURCE_FIELDS:
-        val = os.environ.get(env)
-        st.markdown(f"<span title='Stored as {env}'>{'✅' if val else '▫️'} {label}"
-                    f"{'' if val else ' <span class=rga-muted>(not set)</span>'}</span>", unsafe_allow_html=True)
-    with st.expander("Add or change database keys"):
+    n_keys = sum(1 for env, *_ in SOURCE_FIELDS if os.environ.get(env))
+    st.info(f"Databases: {n_keys} of {len(SOURCE_FIELDS)} optional keys set", icon="📚")
+    with st.expander("Database keys"):
+        st.caption("All databases work without keys. Your email and an OpenAlex key make searches faster and more reliable.")
+        for env, label, _, _ in SOURCE_FIELDS:
+            val = os.environ.get(env)
+            st.markdown(f"<span title='Stored as {env}'>{'✅' if val else '▫️'} {label}"
+                        f"{'' if val else ' <span class=rga-muted>(not set)</span>'}</span>", unsafe_allow_html=True)
         credential_form("source_cred_form", SOURCE_FIELDS, "Save source keys")
         if not os.environ.get("OPENALEX_API_KEY"):
             mail = os.environ.get("RGA_MAILTO", "")
@@ -396,18 +463,8 @@ with st.sidebar:
             stage = STAGE_INFO.get(j["stage"], (j["stage"], ""))[0]
             st.markdown(f"{icon} **{j['label']}**  \n<span class='rga-muted'>{stage}</span>", unsafe_allow_html=True)
 
-    st.subheader("3. Previous investigations")
-    runs = list_runs(settings().runs_dir)
-    labels = {rid: run_label(rid, s) for rid, s in runs}
-    selected_run = st.selectbox("Open a run", options=[""] + [r for r, _ in runs],
-                                format_func=lambda r: labels.get(r, "Choose one…"), key="sb_run",
-                                help="Opens the run in the Results tab and copies its settings into the form, so you can run it again with changes.")
-    if selected_run and st.session_state.get("prefilled_from") != selected_run:
-        prefill_form_from(dict(runs)[selected_run])
-        st.session_state["prefilled_from"] = selected_run
-        st.caption("Form filled with this run's settings.")
-
-tab_new, tab_view = st.tabs(["🔎  New investigation", "📄  Results"])
+selected_run = st.session_state.get("selected_run")
+tab_new, tab_runs, tab_view = st.tabs(["New investigation", "Previous investigations", "Results"])
 
 # ----------------------------------------------------------------------------- new run form
 with tab_new:
@@ -419,11 +476,10 @@ with tab_new:
 
     st.title("What do you want to investigate?")
     st.markdown('<p class="rga-hero">Describe a topic. The agent reads the literature, proposes research gaps, '
-                'tries to disprove each one, and writes an evidence-backed report. A run usually takes '
-                'between 30 minutes and a few hours depending on depth.</p>', unsafe_allow_html=True)
+                'tries to disprove each one, and writes an evidence-backed report.</p>', unsafe_allow_html=True)
     if not ready:
         st.warning(f"**One thing before your first run:** {provider_label(chosen_provider)} has {why}. "
-                   "Open **1. AI model** in the sidebar, paste your key and click **Save provider keys**.", icon="🔑")
+                   "Open **AI model settings** in the sidebar, paste your key and click **Save provider keys**.", icon="🔑")
 
     with st.form("run_form"):
         topic = st.text_input("Research topic", key="f_topic",
@@ -436,28 +492,28 @@ with tab_new:
                                     help="Earliest publication year to include. 1900 means no limit.")
         to_year = c3.number_input("To year", min_value=1900, max_value=2100, key="f_to",
                                   help="Latest publication year to include. The current year means up to today.")
-
+        st.write("")
         goal = st.radio("What are you looking for?", list(GOALS), format_func=GOALS.get, key="f_goal", horizontal=True,
                         help="Choose 'tool' if the result should be something you build. The agent then also searches GitHub for existing tools.")
-        existing = st.text_area("Anything you have already built, or want to be different from? (optional)", key="f_existing",
-                                height=90, placeholder="Describe your tool, project or prior work. The agent looks for gaps that would make it "
-                                                       "unique and checks papers and GitHub for anything that already does it.")
-
         depth = st.radio("How deep should the search go?", list(DEPTHS), key="f_depth", horizontal=True,
                          captions=[d["caption"] for d in DEPTHS.values()])
         sources = st.multiselect("Databases to search", ALL_SOURCES, key="f_sources",
                                  format_func=lambda s: SOURCE_INFO[s][0],
                                  help="\n".join(f"- **{n}**: {d}" for n, d in SOURCE_INFO.values()))
-
+        st.write("")
+        with st.expander("Have you already built something, or want to be different from existing work? (optional)"):
+            existing = st.text_area("Describe it", key="f_existing", height=110, label_visibility="collapsed",
+                                    placeholder="Describe your tool, project or prior work. The agent looks for gaps that would make it "
+                                                "unique and checks papers and GitHub for anything that already does it.")
         with st.expander("Advanced settings"):
-            st.caption("Research preferences")
+            st.markdown("**Research preferences**")
             p1, p2 = st.columns(2)
             methodology = p1.text_input("Preferred methodology (optional)", key="f_method",
                                         placeholder="e.g. empirical evaluation, formal verification, user study",
                                         help="Nudges gap generation and the recommendation towards this kind of work.")
             priority = p2.selectbox("Kind of contribution", list(PRIORITIES), format_func=PRIORITIES.get, key="f_priority",
                                     help="Which kind of research you would rather do. Affects ranking.")
-            st.caption("Exact numbers (used when depth is **Custom**)")
+            st.markdown("**Exact numbers** (used when depth is *Custom*)")
             a1, a2, a3, a4 = st.columns(4)
             max_papers = a1.number_input("Max papers analysed", 5, 300, key="f_max_papers",
                                          help="How many papers get a full evidence extraction. The main driver of time and cost.")
@@ -466,12 +522,15 @@ with tab_new:
                                      help="How many times a narrowed gap is re-checked against the literature.")
             max_ft = a4.number_input("Open-access full texts to fetch", 0, 100, key="f_max_ft",
                                      help="PDFs to download and read in full. 0 uses abstracts only.")
-            st.caption("AI model for this run")
+            st.markdown("**AI model for this run**")
             b1, b2, b3 = st.columns(3)
             provider = b1.selectbox("LLM provider", list(PROVIDERS), key="f_provider", format_func=provider_label)
             model = b2.text_input("Model", key="f_model", help="Leave blank for the provider's default model.")
             base_url = b3.text_input("Server address (self-hosted only)", key="f_base_url")
+        st.write("")
         submitted = st.form_submit_button("Start investigation", type="primary", width="stretch")
+    st.caption("A run usually takes between 30 minutes and a few hours depending on depth. You can close this page; "
+               "progress is saved after every step and incomplete runs can be resumed.")
 
     if submitted:
         ok, why = provider_ready(provider)
@@ -480,7 +539,7 @@ with tab_new:
         elif not sources:
             st.error("Select at least one database.")
         elif not ok and not base_url:
-            st.error(f"{provider_label(provider)} is not ready: {why}. Add the key in the sidebar under **1. AI model**.")
+            st.error(f"{provider_label(provider)} is not ready: {why}. Add the key in the sidebar under **AI model settings**.")
         else:
             model_name = model.strip() or PROVIDERS[provider].default_model
             nums = DEPTHS[depth] if depth != "Custom" else {"max_papers": int(max_papers), "per_source": int(per_source),
@@ -568,7 +627,7 @@ flags retracted papers, and tries to disprove each gap before reporting it. If a
         elif job["status"] == "config_error":
             bar.empty()
             head.error("**The model rejected the call because of account configuration.**\n\n" + job["config_error"]
-                       + "\n\nFix it in the sidebar under **1. AI model**, click **Test connection**, then resume this run from the Results tab.")
+                       + "\n\nFix it in the sidebar under **AI model settings**, click **Test connection**, then resume this run from the Results tab.")
         elif job["status"] == "error":
             bar.empty()
             head.error("The run failed. Progress was saved, so you can resume from the Results tab. Details are in the technical log.")
@@ -577,13 +636,58 @@ flags retracted papers, and tries to disprove each gap before reporting it. If a
             st.info("Still running in the background: " + ", ".join(j["label"] for j in others)
                     + ". Pick it under **Watch** above to follow it.")
 
+# ----------------------------------------------------------------------------- previous investigations tab
+with tab_runs:
+    runs = list_runs(settings().runs_dir)
+    st.title("Previous investigations")
+    if not runs:
+        st.info("Nothing here yet. Every investigation you start is saved automatically and will show up on this page.", icon="💡")
+    else:
+        complete_n = sum(1 for _, s in runs if len(s.stages_completed) == len(STAGES))
+        st.markdown(f'<p class="rga-hero">{len(runs)} saved · {complete_n} complete · {len(runs) - complete_n} incomplete. '
+                    'Open one to read its results, run it again with changes, or delete it.</p>', unsafe_allow_html=True)
+        f1, f2 = st.columns([3, 1])
+        query = f1.text_input("Search", key="run_filter", placeholder="Search by topic…", label_visibility="collapsed")
+        show = f2.selectbox("Show", ["All", "Complete", "Incomplete"], key="run_show", label_visibility="collapsed")
+        shown = [(r, s) for r, s in runs if query.lower() in s.options.topic.lower()]
+        if show == "Complete":
+            shown = [(r, s) for r, s in shown if len(s.stages_completed) == len(STAGES)]
+        elif show == "Incomplete":
+            shown = [(r, s) for r, s in shown if len(s.stages_completed) < len(STAGES)]
+        if not shown:
+            st.caption("No run matches.")
+        limit = len(shown) if st.session_state.get("show_all_runs") or len(shown) <= 10 else 10
+        for rid, s in shown[:limit]:
+            is_open = selected_run == rid
+            o = s.options
+            with st.container(border=True):
+                info, b_open, b_again, b_del = st.columns([6, 1.2, 1.6, 0.7])
+                info.markdown(f"**{o.topic}**  \n<span class='rga-muted'>{s.created_at.strftime('%d %b %Y, %H:%M')} · "
+                              f"{run_status(rid, s)} · {len(s.papers)} papers · {provider_label(o.provider)}</span>",
+                              unsafe_allow_html=True)
+                b_open.button("Opened ✓" if is_open else "Open", key=f"open_{rid}", width="stretch", disabled=is_open,
+                              on_click=_select_run, args=(rid,), help="Show this run in the Results tab")
+                b_again.button("↺ Run again", key=f"again_{rid}", width="stretch", on_click=_reuse_settings, args=(rid,),
+                               help="Copy this run's topic and settings into the New investigation form")
+                if st.session_state.get("confirm_delete") == rid:
+                    st.warning("Delete this run and all its files? This cannot be undone.", icon="🗑")
+                    d1, d2, _ = st.columns([1, 1, 6])
+                    if d1.button("Delete", key=f"confirm_{rid}", type="primary", width="stretch"):
+                        delete_run(rid)
+                        st.rerun()
+                    d2.button("Keep", key=f"keep_{rid}", width="stretch", on_click=_ask_delete, args=(None,))
+                else:
+                    b_del.button("🗑", key=f"del_{rid}", width="stretch", on_click=_ask_delete, args=(rid,), help="Delete this run")
+        if limit < len(shown):
+            st.button(f"Show all {len(shown)} runs", key="show_all_runs_btn",
+                      on_click=lambda: st.session_state.update(show_all_runs=True))
+
 # ----------------------------------------------------------------------------- results tab
 with tab_view:
     run_id = selected_run or (st.session_state.get("job") or {}).get("run_id")
     if not run_id:
         st.title("Results")
-        st.info("Nothing to show yet. Start an investigation in the first tab, or open a previous one from the sidebar "
-                "under **3. Previous investigations**.", icon="💡")
+        st.info("Nothing to show yet. Start an investigation in the first tab, or open one from **Previous investigations**.", icon="💡")
     else:
         run_dir = settings().runs_dir / run_id
         sp = run_dir / "state.json"
