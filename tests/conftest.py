@@ -56,7 +56,10 @@ def rec(source, sid, title, year=2023, doi=None, arxiv=None, abstract="An abstra
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    return Settings(cache_dir=tmp_path / "cache", runs_dir=tmp_path / "runs", mailto="test@example.org")
+    # llm_concurrency=1 keeps stage behaviour strictly sequential, which the checkpoint/stop/resume tests rely on;
+    # the parallel path is covered by tests/test_parallel.py
+    return Settings(cache_dir=tmp_path / "cache", runs_dir=tmp_path / "runs", mailto="test@example.org", llm_concurrency=1,
+                    screen_model="main")
 
 
 @pytest.fixture

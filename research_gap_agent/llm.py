@@ -32,7 +32,7 @@ class LLMConfigError(RuntimeError):
 
 class LLM(Protocol):
     def structured(self, *, task: str, system: str, user: str, output_model: type[T], effort: Effort = "high",
-                   max_tokens: int = 16000) -> T: ...
+                   max_tokens: int = 16000, model: str | None = None) -> T: ...
 
     @property
     def call_log(self) -> list[LLMCallLog]: ...
@@ -63,6 +63,7 @@ class AnthropicLLM:
         self.hard_deadline = float(self.settings.llm_timeout) + 120.0
         self.on_event: Optional[Callable[[str], None]] = None  # progress sink for retry notices (GUI/CLI log)
         self._log: list[LLMCallLog] = []
+        self._no_fallback_models: set[str] = set()  # models whose API rejected the fallbacks parameter
 
     def _emit(self, msg: str) -> None:
         log.warning(msg)
@@ -111,16 +112,21 @@ class AnthropicLLM:
         raise RuntimeError("unreachable")
 
     def structured(self, *, task: str, system: str, user: str, output_model: type[T], effort: Effort = "high",
-                   max_tokens: int = 16000) -> T:
+                   max_tokens: int = 16000, model: str | None = None) -> T:
+        """One structured call. ``model`` overrides the default model for this call only (e.g. a cheaper screening model).
+
+        Safe to call from several threads at once: the SDK client is thread-safe and this object only appends to its log.
+        """
+        model = model or self.model
         kwargs = dict(
-            model=self.model,
+            model=model,
             max_tokens=max_tokens,
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": user}],
             output_format=output_model,
             output_config={"effort": effort},
         )
-        if self._use_fallbacks:
+        if self._use_fallbacks and model not in self._no_fallback_models:
             kwargs["betas"] = [self.FALLBACK_BETA]
             kwargs["fallbacks"] = "default"
         if self.settings.workspace_id:
@@ -135,9 +141,9 @@ class AnthropicLLM:
                     "wrkspc_...) in .env or the GUI credentials panel, or create a new key scoped to a workspace "
                     "(Console > API Keys > Create Key > choose a workspace). Original error: " + e.message
                 ) from e
-            if self._use_fallbacks and "fallback" in str(e).lower():
-                log.warning("API rejected fallbacks parameter; retrying without it (%s)", e.message)
-                self._use_fallbacks = False
+            if "fallbacks" in kwargs and "fallback" in str(e).lower():
+                log.warning("API rejected fallbacks parameter for %s; retrying without it (%s)", model, e.message)
+                self._no_fallback_models.add(model)
                 kwargs.pop("betas", None)
                 kwargs.pop("fallbacks", None)
                 response = self._request(kwargs)
@@ -163,6 +169,24 @@ class AnthropicLLM:
         if parsed is None:
             raise RuntimeError(f"Task {task!r} returned no parsed output")
         return parsed
+
+
+def screen_model_for(settings: Settings, llm: LLM) -> str | None:
+    """The model to use for title/abstract screening, or None to use the main model.
+
+    ``RGA_SCREEN_MODEL`` (or ``--screen-model``) wins; the value ``main`` disables the cheaper model. Otherwise the
+    provider preset's ``fast_model`` is used when it differs from the main model.
+    """
+    from .providers import PROVIDERS
+
+    chosen = (settings.screen_model or "").strip()
+    if chosen.lower() in ("main", "same", "none"):
+        return None
+    if chosen:
+        return chosen
+    preset = PROVIDERS.get(settings.llm_provider)
+    fast = preset.fast_model if preset else ""
+    return fast if fast and fast != getattr(llm, "model", None) else None
 
 
 def build_llm(settings: Settings | None = None, provider: str | None = None, model: str | None = None) -> LLM:
@@ -203,9 +227,9 @@ class ScriptedLLM:
         return self
 
     def structured(self, *, task: str, system: str, user: str, output_model: type[T], effort: Effort = "high",
-                   max_tokens: int = 16000) -> T:
+                   max_tokens: int = 16000, model: str | None = None) -> T:
         self.calls.append((task, output_model, user))
-        self._log.append(LLMCallLog(task=task, model="scripted"))
+        self._log.append(LLMCallLog(task=task, model=model or "scripted"))
         handler = self.handlers.get(output_model)
         if handler is None:
             raise KeyError(f"ScriptedLLM has no handler for {output_model.__name__} (task={task})")

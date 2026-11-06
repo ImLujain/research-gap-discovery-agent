@@ -109,6 +109,25 @@ def test_request_shape_uses_structured_output_effort_caching_and_fallbacks(stub_
     assert llm.call_log[0].task == "t" and llm.call_log[0].input_tokens == 10
 
 
+def test_model_override_applies_to_that_call_only(stub_anthropic):
+    holder, _ = stub_anthropic
+    llm = _llm(holder, [_Resp(), _Resp()])
+    llm.structured(task="screen", system="s", user="u", output_model=Out, model="claude-haiku-5-5")
+    llm.structured(task="judge", system="s", user="u", output_model=Out)
+    assert holder["messages"].kwargs[0]["model"] == "claude-haiku-5-5"
+    assert holder["messages"].kwargs[1]["model"] == "claude-opus-5-5"
+
+
+def test_fallback_rejection_is_remembered_per_model(stub_anthropic):
+    holder, BadRequestError = stub_anthropic
+    llm = _llm(holder, [BadRequestError("fallbacks: unsupported"), _Resp(), _Resp()])
+    llm.structured(task="screen", system="s", user="u", output_model=Out, model="claude-haiku-5-5")
+    llm.structured(task="judge", system="s", user="u", output_model=Out)
+    kws = holder["messages"].kwargs
+    assert "fallbacks" in kws[0] and "fallbacks" not in kws[1]  # haiku: rejected, retried without
+    assert "fallbacks" in kws[2]  # the main model still gets fallbacks
+
+
 def test_fallback_parameter_rejected_is_retried_without_it(stub_anthropic):
     holder, BadRequestError = stub_anthropic
     llm = _llm(holder, [BadRequestError("fallbacks: unsupported"), _Resp()])

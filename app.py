@@ -128,7 +128,8 @@ SOURCE_FIELDS: list[tuple[str, str, bool, str]] = [
     ("GITHUB_TOKEN", "GitHub token", True, "Optional. Raises the GitHub search limit from 10 to 30 requests per minute."),
 ]
 FORM_KEYS = ["f_topic", "f_discipline", "f_from", "f_to", "f_method", "f_priority", "f_goal", "f_existing", "f_sources",
-             "f_depth", "f_max_papers", "f_per_source", "f_rounds", "f_max_ft", "f_provider", "f_model", "f_base_url"]
+             "f_depth", "f_max_papers", "f_per_source", "f_rounds", "f_max_ft", "f_provider", "f_model", "f_base_url",
+             "f_screen_model", "f_concurrency"]
 
 st.markdown("""
 <style>
@@ -208,12 +209,13 @@ def prefill_form_from(state: RunState) -> None:
         "f_max_papers": o.max_papers_to_analyze, "f_per_source": o.per_source_limit,
         "f_rounds": o.validation_rounds, "f_max_ft": o.max_full_text,
         "f_provider": o.provider if o.provider in PROVIDERS else detect_provider(), "f_model": o.model,
-        "f_base_url": os.environ.get("RGA_LLM_BASE_URL", ""),
+        "f_base_url": os.environ.get("RGA_LLM_BASE_URL", ""), "f_screen_model": o.screen_model or "",
     })
 
 
 def run_in_background(options: RunOptions | None, resume_id: str | None, q: queue.Queue, provider: str | None,
-                      model: str | None, base_url: str | None, stop_event: threading.Event) -> None:
+                      model: str | None, base_url: str | None, stop_event: threading.Event,
+                      concurrency: int | None = None) -> None:
     """Worker thread: runs the coordinator, streams progress lines into ``q``, ends with ('done'|'error'|'stopped', payload)."""
     try:
         from research_gap_agent.llm import build_llm
@@ -226,6 +228,8 @@ def run_in_background(options: RunOptions | None, resume_id: str | None, q: queu
             s.model = model
         if base_url:
             s.llm_base_url = base_url
+        if concurrency:
+            s.llm_concurrency = int(concurrency)
         llm = build_llm(s)
         progress = lambda msg: q.put(("log", msg))  # noqa: E731
         if resume_id:
@@ -277,7 +281,7 @@ def test_llm_connection(provider: str, model: str | None, base_url: str | None) 
 
 
 def start_job(options: RunOptions | None, resume_id: str | None, provider: str | None, model: str | None,
-              base_url: str | None) -> None:
+              base_url: str | None, concurrency: int | None = None) -> None:
     stop_event = threading.Event()
     job = {"q": queue.Queue(), "log": [], "run_id": resume_id, "status": "running",
            "started": time.time(), "stage": "starting", "stage_started": time.time(), "stop": stop_event,
@@ -285,7 +289,7 @@ def start_job(options: RunOptions | None, resume_id: str | None, provider: str |
     st.session_state.setdefault("jobs", []).append(job)
     st.session_state["job"] = job
     threading.Thread(target=run_in_background,
-                     args=(options, resume_id, job["q"], provider, model, base_url, stop_event),
+                     args=(options, resume_id, job["q"], provider, model, base_url, stop_event, concurrency),
                      daemon=True).start()
 
 
@@ -463,7 +467,8 @@ with tab_new:
     for k, v in {"f_provider": chosen_provider, "f_model": settings().llm_model or PROVIDERS[chosen_provider].default_model,
                  "f_from": 2020, "f_to": CURRENT_YEAR, "f_sources": DEFAULT_SOURCES, "f_depth": "Standard",
                  "f_max_papers": 60, "f_per_source": 25, "f_rounds": 2, "f_max_ft": 20, "f_priority": "(none)",
-                 "f_goal": "research", "f_existing": ""}.items():
+                 "f_goal": "research", "f_existing": "", "f_screen_model": "",
+                 "f_concurrency": settings().llm_concurrency}.items():
         st.session_state.setdefault(k, v)
 
     st.title("New investigation")
@@ -519,6 +524,15 @@ with tab_new:
             provider = b1.selectbox("LLM provider", list(PROVIDERS), key="f_provider", format_func=provider_label)
             model = b2.text_input("Model", key="f_model", help="Leave blank for the provider's default model.")
             base_url = b3.text_input("Server address (self-hosted only)", key="f_base_url")
+            st.markdown("**Speed**")
+            c1_, c2_ = st.columns(2)
+            screen_model = c1_.text_input("Model for screening papers", key="f_screen_model",
+                                          placeholder="blank = provider's fast model",
+                                          help="Deciding whether a paper is on-topic is a simple task, so a cheaper model is used "
+                                               "by default (claude-haiku-5-5 for Anthropic). Type 'main' to use the main model.")
+            concurrency = c2_.number_input("Model calls at the same time", 1, 8, key="f_concurrency",
+                                           help="Screening batches, evidence extraction and gap validations run in parallel. "
+                                                "Lower this if your API account hits rate limits.")
         st.write("")
         submitted = st.form_submit_button("Start investigation", type="primary", width="stretch")
     st.caption("A run usually takes between 30 minutes and a few hours depending on depth. You can close this page; "
@@ -544,8 +558,8 @@ with tab_new:
                               goal=goal, existing_work=existing.strip() or None,
                               per_source_limit=nums["per_source"], max_papers_to_analyze=nums["max_papers"],
                               validation_rounds=nums["rounds"], max_full_text=nums["max_ft"], provider=provider,
-                              model=model_name)
-            start_job(opts, None, provider, model_name, base_url.strip() or None)
+                              model=model_name, screen_model=(screen_model.strip() or None))
+            start_job(opts, None, provider, model_name, base_url.strip() or None, int(concurrency))
 
     jobs = st.session_state.get("jobs", [])
     for j in jobs:
@@ -703,7 +717,7 @@ with tab_view:
                 st.progress(len(done) / len(STAGES))
                 if st.button("Resume this run", type="primary"):
                     start_job(None, run_id, st.session_state.get("f_provider"), st.session_state.get("f_model"),
-                              st.session_state.get("f_base_url") or None)
+                              st.session_state.get("f_base_url") or None, st.session_state.get("f_concurrency"))
                     st.rerun()
 
             surviving = [v for v in state.validated_gaps if not v.rejected]

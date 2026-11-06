@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 
@@ -17,6 +18,7 @@ class LiteratureDiscovery:
         self.sources = sources
         self.state = state
         self.corpus = Corpus(state.papers)
+        self.lock = threading.RLock()  # guards corpus/state mutation when several validations run at once
         self.progress = progress or (lambda msg: None)
         self._has_sink = progress is not None
         for src in sources:
@@ -67,6 +69,11 @@ class LiteratureDiscovery:
 
     def _record(self, source_name: str, query: str, purpose: str, from_year, to_year,
                 outcome: SearchOutcome) -> SearchRecord:
+        with self.lock:
+            return self._record_locked(source_name, query, purpose, from_year, to_year, outcome)
+
+    def _record_locked(self, source_name: str, query: str, purpose: str, from_year, to_year,
+                       outcome: SearchOutcome) -> SearchRecord:
         rec = SearchRecord(
             id=self._next_search_id(),
             source=source_name,

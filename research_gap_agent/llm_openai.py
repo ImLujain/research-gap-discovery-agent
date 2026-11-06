@@ -102,11 +102,11 @@ class OpenAICompatibleLLM:
 
     # ------------------------------------------------------------------
     def _request_kwargs(self, system: str, user: str, schema: dict, name: str, mode: int, max_tokens: int,
-                        effort: str) -> dict:
+                        effort: str, model: Optional[str] = None) -> dict:
         schema_hint = ("\n\nRespond ONLY with a JSON object that conforms exactly to this JSON schema (no prose, no code fence):\n"
                        + json.dumps(schema))
         sys_text = system if mode < 2 else system + schema_hint
-        kw: dict = {"model": self.model, "messages": [{"role": "system", "content": sys_text},
+        kw: dict = {"model": model or self.model, "messages": [{"role": "system", "content": sys_text},
                                                       {"role": "user", "content": user}],
                     self._token_param: max_tokens}
         if mode == 0:
@@ -130,14 +130,14 @@ class OpenAICompatibleLLM:
         return self.client.chat.completions.create(**kw)
 
     def structured(self, *, task: str, system: str, user: str, output_model: type[T], effort: str = "high",
-                   max_tokens: int = 16000) -> T:
+                   max_tokens: int = 16000, model: Optional[str] = None) -> T:
         schema = output_model.model_json_schema()
         name = re.sub(r"[^a-zA-Z0-9_]", "_", output_model.__name__)[:64]
         start_mode = 0 if self.preset.strict_json_schema else 1
         mode = max(self._mode, start_mode)
         response = None
         while response is None:
-            kw = self._request_kwargs(system, user, schema, name, mode, max_tokens, effort)
+            kw = self._request_kwargs(system, user, schema, name, mode, max_tokens, effort, model)
             try:
                 response = self._call(kw)
             except Exception as e:  # noqa: BLE001
