@@ -397,14 +397,11 @@ if st.session_state.get("prefill_run"):
 with st.sidebar:
     st.title("Research Gap Agent")
     st.caption("Finds research gaps in the literature and checks its own findings before showing them to you.")
-    with st.popover("Appearance", help="Switch between light and dark mode. 'System' follows your device setting."):
-        t1, t2, t3 = st.columns(3)
-        if t1.button("Light", key="theme_light", width="stretch"):
-            apply_theme("Light")
-        if t2.button("Dark", key="theme_dark", width="stretch"):
-            apply_theme("Dark")
-        if t3.button("System", key="theme_system", width="stretch"):
-            apply_theme("System")
+    t1, t2, _ = st.columns([1, 1, 3])
+    if t1.button(":material/light_mode:", key="theme_light", help="Light theme", width="stretch"):
+        apply_theme("Light")
+    if t2.button(":material/dark_mode:", key="theme_dark", help="Dark theme", width="stretch"):
+        apply_theme("Dark")
 
     st.subheader("Setup")
     detected = detect_provider()

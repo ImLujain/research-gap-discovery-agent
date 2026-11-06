@@ -32,8 +32,8 @@ Progress is printed to stderr; the report, full run state, and reference exports
 streamlit run app.py
 ```
 
-An interface designed for people who do not use the command line. The sidebar holds setup only: an Appearance switch
-(light, dark or system theme), the AI model key, and the optional database keys; keys are saved to `.env`. The main area
+An interface designed for people who do not use the command line. The sidebar holds setup only: two theme buttons
+(light and dark), the AI model key, and the optional database keys; keys are saved to `.env`. The main area
 has three tabs. *New investigation* is a form with plain labels and three depth presets (Quick ≈ 30 papers / 1 validation
 round, Standard ≈ 60 / 2, Thorough ≈ 120 / 3) plus a Custom option that exposes the exact numbers under *Advanced
 settings*; while a run is in progress it shows a twelve-step progress bar with a plain-language description of the current
